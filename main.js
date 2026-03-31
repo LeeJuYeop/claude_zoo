@@ -112,7 +112,7 @@ ipcMain.handle('get-ecosystem-data', async () => {
 
       plugins.push({
         id: pluginId,
-        instanceKey: `${pluginId}::${instance.scope}`,
+        instanceKey: `${pluginId}::${instance.scope}::${instance.projectPath || installPath}`,
         name: name || pluginId,
         marketplace: marketplace || 'unknown',
         version: instance.version || 'unknown',
