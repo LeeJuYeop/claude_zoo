@@ -64,6 +64,52 @@ function getSkills(commandsPath) {
   return skills
 }
 
+// 에이전트 파일 파싱 (YAML frontmatter)
+function parseAgentFile(filePath) {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8')
+    const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+    const filename = path.basename(filePath, '.md')
+    if (!fmMatch) return { name: filename, description: '', tools: [], model: null }
+
+    const fm = fmMatch[1]
+    const name = (fm.match(/^name:\s*['"]?(.+?)['"]?\s*$/m) || [])[1]?.trim() || filename
+    const description = (fm.match(/^description:\s*['"]?(.+?)['"]?\s*$/m) || [])[1]?.trim() || ''
+    const model = (fm.match(/^model:\s*['"]?(.+?)['"]?\s*$/m) || [])[1]?.trim() || null
+
+    let tools = []
+    const inlineTools = fm.match(/^tools:\s*(.+)$/m)
+    if (inlineTools && !inlineTools[1].trim().startsWith('-')) {
+      tools = inlineTools[1].split(',').map(t => t.trim()).filter(Boolean)
+    } else {
+      const listBlock = fm.match(/^tools:\s*\n((?:[ \t]*-[ \t]*.+\n?)*)/m)
+      if (listBlock) {
+        tools = (listBlock[1].match(/[ \t]*-[ \t]*(.+)/g) || [])
+          .map(t => t.replace(/^[ \t]*-[ \t]*/, '').trim())
+      }
+    }
+
+    return { name, description, tools, model }
+  } catch (_) {
+    return { name: path.basename(filePath, '.md'), description: '', tools: [], model: null }
+  }
+}
+
+// 에이전트 디렉토리 스캔
+function scanAgents(agentsDir, scope, projectPath) {
+  const agents = []
+  try {
+    if (!fs.existsSync(agentsDir)) return agents
+    for (const entry of fs.readdirSync(agentsDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.md')) continue
+      const filePath = path.join(agentsDir, entry.name)
+      const meta = parseAgentFile(filePath)
+      agents.push({ ...meta, scope, projectPath: projectPath || null, filePath })
+    }
+  } catch (_) {}
+  return agents
+}
+
 // MCP 서버 정보 읽기
 function getMcpServers(installPath) {
   const mcpResult = readJsonSafe(path.join(installPath, '.mcp.json'))
@@ -152,7 +198,21 @@ ipcMain.handle('get-ecosystem-data', async () => {
     }
   }
 
-  return { plugins, errors, claudeDir }
+  // Sub-agents 수집
+  const agents = []
+  agents.push(...scanAgents(path.join(claudeDir, 'agents'), 'user', null))
+
+  const knownProjectPaths = new Set()
+  for (const instances of Object.values(installedMap)) {
+    for (const inst of instances) {
+      if (inst.projectPath) knownProjectPaths.add(inst.projectPath)
+    }
+  }
+  for (const pp of knownProjectPaths) {
+    agents.push(...scanAgents(path.join(pp, '.claude', 'agents'), 'project', pp))
+  }
+
+  return { plugins, agents, errors, claudeDir }
 })
 
 app.whenReady().then(createWindow)

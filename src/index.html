@@ -290,6 +290,19 @@
       padding: 24px; text-align: center; flex-direction: column; gap: 10px;
     }
     .hint-icon { font-size: 32px; }
+
+    /* ── 에이전트 툴 태그 ── */
+    .agent-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+    .tool-tag {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 4px; padding: 1px 7px;
+      font-size: 11px; color: var(--text-muted);
+      font-family: 'Consolas', monospace;
+    }
+    .agent-desc {
+      font-size: 12px; color: var(--text-muted);
+      margin-bottom: 10px; line-height: 1.5;
+    }
   </style>
 </head>
 <body>
@@ -327,6 +340,17 @@
     function formatDate(iso) {
       if (!iso) return '-';
       return new Date(iso).toLocaleDateString('ko-KR');
+    }
+
+    // ── 에이전트 유틸 ─────────────────────────────────────
+    function groupAgentsByProject(agents) {
+      const groups = new Map();
+      for (const a of agents) {
+        const key = a.projectPath || '';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(a);
+      }
+      return groups;
     }
 
     // ── RefreshIcon ────────────────────────────────────────
@@ -377,14 +401,106 @@
       );
     }
 
+    // ── AgentCard ──────────────────────────────────────────
+    function AgentCard({ agent, selected, onClick, hideProjectPath }) {
+      return (
+        <div
+          className={`plugin-card${selected ? ' selected' : ''}`}
+          onClick={() => onClick(agent)}
+        >
+          <div className="card-header">
+            <div className="card-title">{agent.name}</div>
+            {agent.model && <div className="card-version">{agent.model.split('-').slice(-2).join('-')}</div>}
+          </div>
+
+          <div className="card-badges">
+            <span className={scopeBadgeClass(agent.scope)}>{scopeLabel(agent.scope)}</span>
+            {agent.tools.length > 0 && (
+              <span className="badge badge-marketplace">{agent.tools.length} tools</span>
+            )}
+          </div>
+
+          {agent.description && (
+            <div className="agent-desc">{agent.description}</div>
+          )}
+
+          {!hideProjectPath && agent.projectPath && (
+            <div className="card-project-path" title={agent.projectPath}>
+              📁 {agent.projectPath}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     // ── Sidebar ────────────────────────────────────────────
-    function Sidebar({ plugin, onClose }) {
-      if (!plugin) {
+    function Sidebar({ plugin, agent, onClose }) {
+      if (!plugin && !agent) {
         return (
           <div className="sidebar">
             <div className="no-sidebar-hint">
               <div className="hint-icon">👈</div>
-              <div>플러그인 카드를 클릭하면<br/>상세 정보를 볼 수 있습니다</div>
+              <div>카드를 클릭하면<br/>상세 정보를 볼 수 있습니다</div>
+            </div>
+          </div>
+        );
+      }
+
+      if (agent) {
+        return (
+          <div className="sidebar">
+            <div className="sidebar-header">
+              <div>
+                <div className="sidebar-title">{agent.name}</div>
+                <div className="sidebar-subtitle">{agent.filePath}</div>
+              </div>
+              <button className="close-btn" onClick={onClose}>✕</button>
+            </div>
+            <div className="sidebar-body">
+              <div className="section">
+                <div className="section-title">기본 정보</div>
+                <div className="info-row">
+                  <span className="info-label">Scope</span>
+                  <span className="info-value">
+                    <span className={scopeBadgeClass(agent.scope)}>{scopeLabel(agent.scope)}</span>
+                  </span>
+                </div>
+                {agent.model && (
+                  <div className="info-row">
+                    <span className="info-label">Model</span>
+                    <span className="info-value">{agent.model}</span>
+                  </div>
+                )}
+                {agent.projectPath && (
+                  <div className="info-row">
+                    <span className="info-label">프로젝트 경로</span>
+                    <span className="info-value" title={agent.projectPath}>{agent.projectPath}</span>
+                  </div>
+                )}
+              </div>
+
+              {agent.description && (
+                <div className="section">
+                  <div className="section-title">설명</div>
+                  <div style={{fontSize: '13px', color: 'var(--text)', lineHeight: '1.6'}}>{agent.description}</div>
+                </div>
+              )}
+
+              <div className="section">
+                <div className="section-title">
+                  허용된 Tools
+                  <span className="section-count">{agent.tools.length}</span>
+                </div>
+                {agent.tools.length === 0 ? (
+                  <div style={{fontSize: '12px', color: 'var(--text-muted)'}}>제한 없음 (모든 툴 허용)</div>
+                ) : (
+                  <div className="agent-tools">
+                    {agent.tools.map((tool, i) => (
+                      <span key={i} className="tool-tag">{tool}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         );
@@ -488,6 +604,7 @@
       const [loading, setLoading] = useState(true);
       const [activeTab, setActiveTab] = useState('all');
       const [selectedPlugin, setSelectedPlugin] = useState(null);
+      const [selectedAgent, setSelectedAgent] = useState(null);
       const [spinning, setSpinning] = useState(false);
 
       const loadData = useCallback(async () => {
@@ -513,14 +630,19 @@
         { key: 'user',    label: 'User' },
         { key: 'project', label: 'Project' },
         { key: 'local',   label: 'Local' },
+        { key: 'agents',  label: 'Agents' },
       ];
 
-      const filtered = (data?.plugins || []).filter(
-        p => activeTab === 'all' || p.scope === activeTab
-      );
+      const isAgentsTab = activeTab === 'agents';
 
-      const countByScope = (scope) =>
-        (data?.plugins || []).filter(p => scope === 'all' || p.scope === scope).length;
+      const filtered = isAgentsTab
+        ? (data?.agents || [])
+        : (data?.plugins || []).filter(p => activeTab === 'all' || p.scope === activeTab);
+
+      const countByScope = (scope) => {
+        if (scope === 'agents') return (data?.agents || []).length;
+        return (data?.plugins || []).filter(p => scope === 'all' || p.scope === scope).length;
+      };
 
       return (
         <>
@@ -556,7 +678,7 @@
               <div
                 key={tab.key}
                 className={`tab${activeTab === tab.key ? ' active' : ''}`}
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => { setActiveTab(tab.key); setSelectedPlugin(null); setSelectedAgent(null); }}
               >
                 {tab.label}
                 <span className="tab-count">{countByScope(tab.key)}</span>
@@ -575,8 +697,29 @@
               ) : filtered.length === 0 ? (
                 <div className="empty-state">
                   <div className="empty-icon">📭</div>
-                  <div className="empty-text">이 스코프에 설치된 플러그인이 없습니다</div>
+                  <div className="empty-text">{isAgentsTab ? '등록된 에이전트가 없습니다' : '이 스코프에 설치된 플러그인이 없습니다'}</div>
                 </div>
+              ) : isAgentsTab ? (
+                Array.from(groupAgentsByProject(filtered).entries()).map(([projectPath, agents]) => (
+                  <div key={projectPath || 'user'} className="project-group">
+                    <div className="project-group-header">
+                      <span>{projectPath ? '📁' : '👤'}</span>
+                      <span className="project-group-name">{projectPath ? getProjectName(projectPath) : 'User (전역)'}</span>
+                      {projectPath && <span className="project-group-path">{projectPath}</span>}
+                    </div>
+                    <div className="plugin-grid">
+                      {agents.map((agent, i) => (
+                        <AgentCard
+                          key={`${agent.filePath}::${i}`}
+                          agent={agent}
+                          selected={selectedAgent?.filePath === agent.filePath}
+                          onClick={a => setSelectedAgent(selectedAgent?.filePath === a.filePath ? null : a)}
+                          hideProjectPath
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))
               ) : (activeTab === 'local' || activeTab === 'project') ? (
                 Array.from(groupByProject(filtered).entries()).map(([projectPath, plugins]) => (
                   <div key={projectPath || 'unknown'} className="project-group">
@@ -618,8 +761,9 @@
 
             {/* 사이드바 */}
             <Sidebar
-              plugin={selectedPlugin}
-              onClose={() => setSelectedPlugin(null)}
+              plugin={isAgentsTab ? null : selectedPlugin}
+              agent={isAgentsTab ? selectedAgent : null}
+              onClose={() => isAgentsTab ? setSelectedAgent(null) : setSelectedPlugin(null)}
             />
           </div>
         </>
