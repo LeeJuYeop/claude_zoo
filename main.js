@@ -119,7 +119,7 @@ ipcMain.handle('get-ecosystem-data', async () => {
         scope: instance.scope,
         projectPath: instance.projectPath || null,
         installPath,
-        isEnabled: enabledPlugins[pluginId] === true,
+        isEnabled: enabledPlugins[pluginId] !== false,
         isBlocked: blockedIds.has(pluginId),
         blockedReason: blockedEntry?.reason || null,
         installedAt: instance.installedAt || null,
