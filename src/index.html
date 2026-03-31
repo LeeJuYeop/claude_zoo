@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline';" />
+  <title>Claude Code 생태계 대시보드</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --blue: #58a6ff;
+      --green: #3fb950;
+      --orange: #f0883e;
+      --red: #f85149;
+      --yellow: #d29922;
+      --purple: #bc8cff;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── 헤더 ── */
+    .header {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: var(--surface);
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .header-logo {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--blue), var(--purple));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .header h1 { font-size: 18px; font-weight: 600; }
+    .header-path { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+    .refresh-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      display: flex; align-items: center; gap: 6px;
+      transition: background 0.15s;
+    }
+    .refresh-btn:hover { background: var(--border); }
+    .refresh-btn.spinning svg { animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── 탭 바 ── */
+    .tabs {
+      padding: 0 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+      background: var(--surface);
+    }
+    .tab {
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--text-muted);
+      border-bottom: 2px solid transparent;
+      display: flex; align-items: center; gap: 8px;
+      transition: color 0.15s;
+      margin-bottom: -1px;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+    .tab-count {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .tab.active .tab-count { background: rgba(88,166,255,0.15); border-color: var(--blue); color: var(--blue); }
+
+    /* ── 메인 레이아웃 ── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── 플러그인 그리드 ── */
+    .grid-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+    .grid-area::-webkit-scrollbar { width: 6px; }
+    .grid-area::-webkit-scrollbar-track { background: transparent; }
+    .grid-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .plugin-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+
+    /* ── 플러그인 카드 ── */
+    .plugin-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+    .plugin-card:hover { border-color: var(--blue); transform: translateY(-1px); }
+    .plugin-card.selected { border-color: var(--blue); background: rgba(88,166,255,0.05); }
+
+    .card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; }
+    .card-title { font-size: 15px; font-weight: 600; }
+    .card-version {
+      font-size: 11px; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 2px 7px; color: var(--text-muted);
+    }
+
+    .card-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+    .badge {
+      font-size: 11px; font-weight: 500;
+      border-radius: 5px; padding: 2px 8px;
+    }
+    .badge-user    { background: rgba(88,166,255,0.15); color: var(--blue); }
+    .badge-project { background: rgba(63,185,80,0.15);  color: var(--green); }
+    .badge-local   { background: rgba(240,136,62,0.15); color: var(--orange); }
+    .badge-enabled  { background: rgba(63,185,80,0.15);  color: var(--green); }
+    .badge-disabled { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+    .badge-blocked  { background: rgba(248,81,73,0.15);  color: var(--red); }
+    .badge-marketplace { background: rgba(188,140,255,0.15); color: var(--purple); }
+
+    .card-stats { display: flex; gap: 16px; }
+    .stat { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text-muted); }
+    .stat-icon { font-size: 14px; }
+    .stat strong { color: var(--text); }
+
+    .card-project-path {
+      margin-top: 10px;
+      font-size: 11px; color: var(--text-muted);
+      background: var(--surface2); border-radius: 4px;
+      padding: 4px 8px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* ── 디테일 사이드바 ── */
+    .sidebar {
+      width: 380px;
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      overflow-y: auto;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar::-webkit-scrollbar { width: 6px; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .sidebar-header {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: flex-start; justify-content: space-between;
+      position: sticky; top: 0; background: var(--surface); z-index: 1;
+    }
+    .sidebar-title { font-size: 16px; font-weight: 600; }
+    .sidebar-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+    .close-btn {
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 18px; padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .close-btn:hover { background: var(--surface2); color: var(--text); }
+
+    .sidebar-body { padding: 20px; flex: 1; }
+
+    .section { margin-bottom: 24px; }
+    .section-title {
+      font-size: 12px; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+    }
+    .section-count {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0 6px; font-size: 11px; color: var(--text-muted);
+    }
+
+    .skill-item {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 8px 12px; margin-bottom: 6px;
+    }
+    .skill-name { font-size: 13px; font-family: 'Consolas', monospace; color: var(--blue); }
+    .skill-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+    .mcp-item {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 10px 12px; margin-bottom: 6px;
+    }
+    .mcp-name { font-size: 13px; font-weight: 500; color: var(--green); }
+    .mcp-type { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .mcp-command { font-size: 11px; font-family: monospace; color: var(--text-muted);
+      background: var(--bg); border-radius: 3px; padding: 2px 6px; margin-top: 4px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+    .info-label { font-size: 12px; color: var(--text-muted); }
+    .info-value { font-size: 12px; color: var(--text); text-align: right; max-width: 200px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .empty-state {
+      text-align: center; padding: 48px 24px; color: var(--text-muted);
+    }
+    .empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-text { font-size: 14px; }
+
+    .error-banner {
+      margin: 16px 24px 0;
+      background: rgba(248,81,73,0.1);
+      border: 1px solid rgba(248,81,73,0.3);
+      border-radius: 6px; padding: 10px 14px;
+    }
+    .error-title { font-size: 12px; font-weight: 600; color: var(--red); margin-bottom: 4px; }
+    .error-item { font-size: 11px; color: var(--text-muted); }
+
+    .loading {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      height: 100%; gap: 16px; color: var(--text-muted);
+    }
+    .loading-spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .no-sidebar-hint {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: var(--text-muted); font-size: 13px;
+      padding: 24px; text-align: center; flex-direction: column; gap: 10px;
+    }
+    .hint-icon { font-size: 32px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    // ── 유틸 ──────────────────────────────────────────────
+    function scopeLabel(scope) {
+      return { user: 'User', project: 'Project', local: 'Local' }[scope] || scope;
+    }
+    function scopeBadgeClass(scope) {
+      return `badge badge-${scope}`;
+    }
+    function statusBadge(plugin) {
+      if (plugin.isBlocked) return <span className="badge badge-blocked">Blocked</span>;
+      if (plugin.isEnabled) return <span className="badge badge-enabled">Enabled</span>;
+      return <span className="badge badge-disabled">Disabled</span>;
+    }
+    function formatDate(iso) {
+      if (!iso) return '-';
+      return new Date(iso).toLocaleDateString('ko-KR');
+    }
+
+    // ── RefreshIcon ────────────────────────────────────────
+    function RefreshIcon() {
+      return (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+          <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+        </svg>
+      );
+    }
+
+    // ── PluginCard ─────────────────────────────────────────
+    function PluginCard({ plugin, selected, onClick }) {
+      return (
+        <div
+          className={`plugin-card${selected ? ' selected' : ''}`}
+          onClick={() => onClick(plugin)}
+        >
+          <div className="card-header">
+            <div className="card-title">{plugin.name}</div>
+            <div className="card-version">v{plugin.version}</div>
+          </div>
+
+          <div className="card-badges">
+            <span className={scopeBadgeClass(plugin.scope)}>{scopeLabel(plugin.scope)}</span>
+            {statusBadge(plugin)}
+            <span className="badge badge-marketplace">{plugin.marketplace}</span>
+          </div>
+
+          <div className="card-stats">
+            <div className="stat">
+              <span className="stat-icon">⚡</span>
+              <span>Skills <strong>{plugin.skillCount}</strong></span>
+            </div>
+            <div className="stat">
+              <span className="stat-icon">🔌</span>
+              <span>MCP <strong>{plugin.mcpCount}</strong></span>
+            </div>
+          </div>
+
+          {plugin.projectPath && (
+            <div className="card-project-path" title={plugin.projectPath}>
+              📁 {plugin.projectPath}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── Sidebar ────────────────────────────────────────────
+    function Sidebar({ plugin, onClose }) {
+      if (!plugin) {
+        return (
+          <div className="sidebar">
+            <div className="no-sidebar-hint">
+              <div className="hint-icon">👈</div>
+              <div>플러그인 카드를 클릭하면<br/>상세 정보를 볼 수 있습니다</div>
+            </div>
+          </div>
+        );
+      }
+
+      const mcpEntries = Object.entries(plugin.mcpServers);
+
+      return (
+        <div className="sidebar">
+          <div className="sidebar-header">
+            <div>
+              <div className="sidebar-title">{plugin.name}</div>
+              <div className="sidebar-subtitle">{plugin.id} · v{plugin.version}</div>
+            </div>
+            <button className="close-btn" onClick={onClose}>✕</button>
+          </div>
+
+          <div className="sidebar-body">
+            {/* 기본 정보 */}
+            <div className="section">
+              <div className="section-title">기본 정보</div>
+              <div className="info-row">
+                <span className="info-label">Scope</span>
+                <span className="info-value">
+                  <span className={scopeBadgeClass(plugin.scope)}>{scopeLabel(plugin.scope)}</span>
+                </span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">상태</span>
+                <span className="info-value">{statusBadge(plugin)}</span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">Marketplace</span>
+                <span className="info-value">{plugin.marketplace}</span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">설치일</span>
+                <span className="info-value">{formatDate(plugin.installedAt)}</span>
+              </div>
+              {plugin.projectPath && (
+                <div className="info-row">
+                  <span className="info-label">프로젝트 경로</span>
+                  <span className="info-value" title={plugin.projectPath}>{plugin.projectPath}</span>
+                </div>
+              )}
+              {plugin.isBlocked && plugin.blockedReason && (
+                <div className="info-row">
+                  <span className="info-label">차단 사유</span>
+                  <span className="info-value" style={{color: 'var(--red)'}}>{plugin.blockedReason}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Skills */}
+            <div className="section">
+              <div className="section-title">
+                Skills (명령어)
+                <span className="section-count">{plugin.skillCount}</span>
+              </div>
+              {plugin.skills.length === 0 ? (
+                <div style={{fontSize: '12px', color: 'var(--text-muted)'}}>등록된 스킬 없음</div>
+              ) : (
+                plugin.skills.map((skill, i) => (
+                  <div key={i} className="skill-item">
+                    <div className="skill-name">/{skill.name}</div>
+                    {skill.description && <div className="skill-desc">{skill.description}</div>}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* MCP Servers */}
+            <div className="section">
+              <div className="section-title">
+                MCP 서버
+                <span className="section-count">{plugin.mcpCount}</span>
+              </div>
+              {mcpEntries.length === 0 ? (
+                <div style={{fontSize: '12px', color: 'var(--text-muted)'}}>등록된 MCP 서버 없음</div>
+              ) : (
+                mcpEntries.map(([serverName, config]) => (
+                  <div key={serverName} className="mcp-item">
+                    <div className="mcp-name">{serverName}</div>
+                    {config.type && <div className="mcp-type">타입: {config.type}</div>}
+                    {config.command && (
+                      <div className="mcp-command">{config.command} {(config.args || []).join(' ')}</div>
+                    )}
+                    {config.url && <div className="mcp-command">{config.url}</div>}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── App ────────────────────────────────────────────────
+    function App() {
+      const [data, setData] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [activeTab, setActiveTab] = useState('all');
+      const [selectedPlugin, setSelectedPlugin] = useState(null);
+      const [spinning, setSpinning] = useState(false);
+
+      const loadData = useCallback(async () => {
+        setSpinning(true);
+        try {
+          const result = await window.electronAPI.getEcosystemData();
+          setData(result);
+          setSelectedPlugin(prev =>
+            prev ? result.plugins.find(p => p.instanceKey === prev.instanceKey) || null : null
+          );
+        } catch (e) {
+          setData({ plugins: [], errors: [{ file: 'IPC', message: e.message }], claudeDir: '' });
+        } finally {
+          setLoading(false);
+          setTimeout(() => setSpinning(false), 400);
+        }
+      }, []);
+
+      useEffect(() => { loadData(); }, [loadData]);
+
+      const tabs = [
+        { key: 'all',     label: 'All' },
+        { key: 'user',    label: 'User' },
+        { key: 'project', label: 'Project' },
+        { key: 'local',   label: 'Local' },
+      ];
+
+      const filtered = (data?.plugins || []).filter(
+        p => activeTab === 'all' || p.scope === activeTab
+      );
+
+      const countByScope = (scope) =>
+        (data?.plugins || []).filter(p => scope === 'all' || p.scope === scope).length;
+
+      return (
+        <>
+          {/* 헤더 */}
+          <div className="header">
+            <div className="header-left">
+              <div className="header-logo">🤖</div>
+              <div>
+                <h1>Claude Code 생태계 대시보드</h1>
+                {data?.claudeDir && (
+                  <div className="header-path">{data.claudeDir}</div>
+                )}
+              </div>
+            </div>
+            <button className={`refresh-btn${spinning ? ' spinning' : ''}`} onClick={loadData}>
+              <RefreshIcon /> 새로고침
+            </button>
+          </div>
+
+          {/* 에러 배너 */}
+          {data?.errors?.length > 0 && (
+            <div className="error-banner">
+              <div className="error-title">⚠ 일부 파일 읽기 실패</div>
+              {data.errors.map((e, i) => (
+                <div key={i} className="error-item">{e.file}: {e.message}</div>
+              ))}
+            </div>
+          )}
+
+          {/* 탭 */}
+          <div className="tabs">
+            {tabs.map(tab => (
+              <div
+                key={tab.key}
+                className={`tab${activeTab === tab.key ? ' active' : ''}`}
+                onClick={() => setActiveTab(tab.key)}
+              >
+                {tab.label}
+                <span className="tab-count">{countByScope(tab.key)}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* 메인 */}
+          <div className="main">
+            <div className="grid-area">
+              {loading ? (
+                <div className="loading">
+                  <div className="loading-spinner" />
+                  <div>생태계 데이터 로딩 중...</div>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-icon">📭</div>
+                  <div className="empty-text">이 스코프에 설치된 플러그인이 없습니다</div>
+                </div>
+              ) : (
+                <div className="plugin-grid">
+                  {filtered.map(plugin => (
+                    <PluginCard
+                      key={plugin.instanceKey}
+                      plugin={plugin}
+                      selected={selectedPlugin?.instanceKey === plugin.instanceKey}
+                      onClick={p => setSelectedPlugin(
+                        selectedPlugin?.instanceKey === p.instanceKey ? null : p
+                      )}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 사이드바 */}
+            <Sidebar
+              plugin={selectedPlugin}
+              onClose={() => setSelectedPlugin(null)}
+            />
+          </div>
+        </>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

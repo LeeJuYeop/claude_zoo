@@ -1,0 +1,15 @@
+{
+  "name": "claude-ecosystem-dashboard",
+  "version": "1.0.0",
+  "description": "Claude Code AI 생태계 대시보드",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron"]
+  }
+}
