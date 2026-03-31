@@ -131,6 +131,20 @@
       gap: 16px;
     }
 
+    /* ── 프로젝트 그룹 (Local 탭) ── */
+    .project-group { margin-bottom: 32px; }
+    .project-group-header {
+      display: flex; align-items: center; gap: 8px;
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .project-group-name { font-size: 14px; font-weight: 600; color: var(--text); }
+    .project-group-path {
+      font-size: 11px; color: var(--text-muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
     /* ── 플러그인 카드 ── */
     .plugin-card {
       background: var(--surface);
@@ -285,6 +299,20 @@
     const { useState, useEffect, useCallback } = React;
 
     // ── 유틸 ──────────────────────────────────────────────
+    function groupByProject(plugins) {
+      const groups = new Map();
+      for (const p of plugins) {
+        const key = p.projectPath || '';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(p);
+      }
+      return groups;
+    }
+    function getProjectName(projectPath) {
+      if (!projectPath) return '경로 미지정';
+      return projectPath.replace(/\\/g, '/').split('/').filter(Boolean).pop();
+    }
+
     function scopeLabel(scope) {
       return { user: 'User', project: 'Project', local: 'Local' }[scope] || scope;
     }
@@ -312,7 +340,7 @@
     }
 
     // ── PluginCard ─────────────────────────────────────────
-    function PluginCard({ plugin, selected, onClick }) {
+    function PluginCard({ plugin, selected, onClick, hideProjectPath }) {
       return (
         <div
           className={`plugin-card${selected ? ' selected' : ''}`}
@@ -340,7 +368,7 @@
             </div>
           </div>
 
-          {plugin.projectPath && (
+          {!hideProjectPath && plugin.projectPath && (
             <div className="card-project-path" title={plugin.projectPath}>
               📁 {plugin.projectPath}
             </div>
@@ -549,6 +577,29 @@
                   <div className="empty-icon">📭</div>
                   <div className="empty-text">이 스코프에 설치된 플러그인이 없습니다</div>
                 </div>
+              ) : activeTab === 'local' ? (
+                Array.from(groupByProject(filtered).entries()).map(([projectPath, plugins]) => (
+                  <div key={projectPath || 'unknown'} className="project-group">
+                    <div className="project-group-header">
+                      <span>📁</span>
+                      <span className="project-group-name">{getProjectName(projectPath)}</span>
+                      <span className="project-group-path">{projectPath}</span>
+                    </div>
+                    <div className="plugin-grid">
+                      {plugins.map(plugin => (
+                        <PluginCard
+                          key={plugin.instanceKey}
+                          plugin={plugin}
+                          selected={selectedPlugin?.instanceKey === plugin.instanceKey}
+                          onClick={p => setSelectedPlugin(
+                            selectedPlugin?.instanceKey === p.instanceKey ? null : p
+                          )}
+                          hideProjectPath
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))
               ) : (
                 <div className="plugin-grid">
                   {filtered.map(plugin => (
