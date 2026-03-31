@@ -95,31 +95,52 @@ ipcMain.handle('get-ecosystem-data', async () => {
     path.join(claudeDir, 'plugins', 'blocklist.json')
   )
 
-  const enabledPlugins = settingsResult.data?.enabledPlugins || {}
+  const globalEnabledPlugins = settingsResult.data?.enabledPlugins || {}
   const blockedList = (blocklistResult.data?.plugins || [])
   const blockedIds = new Set(blockedList.map(p => p.plugin))
   const installedMap = installedResult.data?.plugins || {}
+
+  // 스코프별 설정 파일에서 enabledPlugins 읽기 (캐시)
+  const projectSettingsCache = new Map()
+  function getScopeEnabledPlugins(scope, projectPath) {
+    if (scope === 'user') return globalEnabledPlugins
+    if (!projectPath) return null
+    const settingsFile = scope === 'local' ? 'settings.local.json' : 'settings.json'
+    const cacheKey = `${projectPath}::${settingsFile}`
+    if (!projectSettingsCache.has(cacheKey)) {
+      const result = readJsonSafe(path.join(projectPath, '.claude', settingsFile))
+      projectSettingsCache.set(cacheKey, result.data?.enabledPlugins ?? null)
+    }
+    return projectSettingsCache.get(cacheKey)
+  }
 
   const plugins = []
 
   for (const [pluginId, instances] of Object.entries(installedMap)) {
     for (const instance of instances) {
+      const { scope, projectPath } = instance
       const installPath = instance.installPath
+
+      // 스코프 설정 파일에 없으면 실제로는 삭제된 항목 → 건너뜀
+      const scopeEnabledPlugins = getScopeEnabledPlugins(scope, projectPath)
+      if (scopeEnabledPlugins !== null && !(pluginId in scopeEnabledPlugins)) continue
+
       const skills = getSkills(path.join(installPath, 'commands'))
       const mcpServers = getMcpServers(installPath)
       const [name, marketplace] = pluginId.split('@')
       const blockedEntry = blockedList.find(p => p.plugin === pluginId)
+      const isEnabled = scopeEnabledPlugins ? scopeEnabledPlugins[pluginId] !== false : true
 
       plugins.push({
         id: pluginId,
-        instanceKey: `${pluginId}::${instance.scope}::${instance.projectPath || installPath}`,
+        instanceKey: `${pluginId}::${scope}::${projectPath || installPath}`,
         name: name || pluginId,
         marketplace: marketplace || 'unknown',
         version: instance.version || 'unknown',
-        scope: instance.scope,
-        projectPath: instance.projectPath || null,
+        scope,
+        projectPath: projectPath || null,
         installPath,
-        isEnabled: enabledPlugins[pluginId] !== false,
+        isEnabled,
         isBlocked: blockedIds.has(pluginId),
         blockedReason: blockedEntry?.reason || null,
         installedAt: instance.installedAt || null,

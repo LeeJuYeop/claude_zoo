@@ -131,7 +131,7 @@
       gap: 16px;
     }
 
-    /* ── 프로젝트 그룹 (Local 탭) ── */
+    /* ── 프로젝트 그룹 (Local / Project 탭) ── */
     .project-group { margin-bottom: 32px; }
     .project-group-header {
       display: flex; align-items: center; gap: 8px;
@@ -577,7 +577,7 @@
                   <div className="empty-icon">📭</div>
                   <div className="empty-text">이 스코프에 설치된 플러그인이 없습니다</div>
                 </div>
-              ) : activeTab === 'local' ? (
+              ) : (activeTab === 'local' || activeTab === 'project') ? (
                 Array.from(groupByProject(filtered).entries()).map(([projectPath, plugins]) => (
                   <div key={projectPath || 'unknown'} className="project-group">
                     <div className="project-group-header">
