@@ -89,9 +89,10 @@ function parseAgentFile(filePath) {
       }
     }
 
-    return { name, description, tools, model }
+    const body = content.slice(fmMatch[0].length).trim()
+    return { name, description, tools, model, body }
   } catch (_) {
-    return { name: path.basename(filePath, '.md'), description: '', tools: [], model: null }
+    return { name: path.basename(filePath, '.md'), description: '', tools: [], model: null, body: '' }
   }
 }
 
@@ -113,21 +114,25 @@ function scanSkills(claudeSubDir, scope, projectPath) {
 
           let name = entry.name.replace('.md', '')
           let description = ''
+          let body = ''
           try {
             const content = fs.readFileSync(full, 'utf-8')
-            const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+            const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/)
             if (fmMatch) {
               const fm = fmMatch[1]
               name = (fm.match(/^name:\s*['"]?(.+?)['"]?\s*$/m) || [])[1]?.trim() || name
               description = (fm.match(/^description:\s*['"]?(.+?)['"]?\s*$/m) || [])[1]?.trim() || ''
+              body = content.slice(fmMatch[0].length).trim()
+            } else {
+              body = content.trim()
             }
             if (!description) {
-              const titleLine = content.split('\n').find(l => l.startsWith('# '))
+              const titleLine = body.split('\n').find(l => l.startsWith('# '))
               if (titleLine) description = titleLine.replace('# ', '').trim()
             }
           } catch (_) {}
 
-          items.push({ type: 'skill', name, description, scope, projectPath: projectPath || null, filePath: full })
+          items.push({ type: 'skill', name, description, body, scope, projectPath: projectPath || null, filePath: full })
         }
       }
       scanDir(dir)
