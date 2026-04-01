@@ -1,6 +1,5 @@
-# .claude/commands/commit_msg.md
-
 ---
+name: commit-msg
 description: 코드 변경 시 커밋메시지 추천
 ---
 

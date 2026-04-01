@@ -291,6 +291,32 @@
     }
     .hint-icon { font-size: 32px; }
 
+    /* ── 필터 바 ── */
+    .filter-bar {
+      padding: 8px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 6px;
+      flex-shrink: 0;
+      background: var(--bg);
+    }
+    .filter-chip {
+      display: flex; align-items: center; gap: 5px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text-muted);
+      user-select: none;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .filter-chip.active { border-color: var(--blue); color: var(--text); }
+    .filter-chip input[type="checkbox"] { display: none; }
+    .filter-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+    }
+
     /* ── 에이전트 툴 태그 ── */
     .agent-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
     .tool-tag {
@@ -340,17 +366,6 @@
     function formatDate(iso) {
       if (!iso) return '-';
       return new Date(iso).toLocaleDateString('ko-KR');
-    }
-
-    // ── 에이전트 유틸 ─────────────────────────────────────
-    function groupAgentsByProject(agents) {
-      const groups = new Map();
-      for (const a of agents) {
-        const key = a.projectPath || '';
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(a);
-      }
-      return groups;
     }
 
     // ── RefreshIcon ────────────────────────────────────────
@@ -433,9 +448,91 @@
       );
     }
 
+    // ── SkillCard ──────────────────────────────────────────
+    function SkillCard({ item, selected, onClick, hideProjectPath }) {
+      return (
+        <div className={`plugin-card${selected ? ' selected' : ''}`} onClick={() => onClick(item)}>
+          <div className="card-header">
+            <div className="card-title">⌨️ {item.name}</div>
+          </div>
+          <div className="card-badges">
+            <span className={scopeBadgeClass(item.scope)}>{scopeLabel(item.scope)}</span>
+          </div>
+          {item.description && <div className="agent-desc">{item.description}</div>}
+          {!hideProjectPath && item.projectPath && (
+            <div className="card-project-path" title={item.projectPath}>📁 {item.projectPath}</div>
+          )}
+        </div>
+      );
+    }
+
+    // ── McpCard ────────────────────────────────────────────
+    function McpCard({ item, selected, onClick, hideProjectPath }) {
+      const preview = item.command
+        ? `${item.command}${item.args?.length ? ' ' + item.args.join(' ') : ''}`
+        : item.url || ''
+      return (
+        <div className={`plugin-card${selected ? ' selected' : ''}`} onClick={() => onClick(item)}>
+          <div className="card-header">
+            <div className="card-title">🔌 {item.name}</div>
+            {item.serverType && <div className="card-version">{item.serverType}</div>}
+          </div>
+          <div className="card-badges">
+            <span className={scopeBadgeClass(item.scope)}>{scopeLabel(item.scope)}</span>
+          </div>
+          {preview && (
+            <div className="mcp-command" style={{marginTop:'10px'}} title={preview}>{preview}</div>
+          )}
+          {!hideProjectPath && item.projectPath && (
+            <div className="card-project-path" title={item.projectPath}>📁 {item.projectPath}</div>
+          )}
+        </div>
+      );
+    }
+
+    // ── HookCard ───────────────────────────────────────────
+    function HookCard({ item, selected, onClick, hideProjectPath }) {
+      return (
+        <div className={`plugin-card${selected ? ' selected' : ''}`} onClick={() => onClick(item)}>
+          <div className="card-header">
+            <div className="card-title">🪝 {item.event}</div>
+          </div>
+          <div className="card-badges">
+            <span className={scopeBadgeClass(item.scope)}>{scopeLabel(item.scope)}</span>
+            <span className="badge" style={{background:'rgba(210,153,34,0.15)', color:'var(--yellow)'}}>
+              {item.matcher}
+            </span>
+          </div>
+          <div className="agent-desc" style={{fontFamily:'Consolas,monospace', fontSize:'11px'}}>
+            {item.commands[0]?.slice(0, 80)}{item.commands[0]?.length > 80 ? '…' : ''}
+          </div>
+          {!hideProjectPath && item.projectPath && (
+            <div className="card-project-path" title={item.projectPath}>📁 {item.projectPath}</div>
+          )}
+        </div>
+      );
+    }
+
+    // ── 카드 타입 라우터 ───────────────────────────────────
+    function ItemCard({ item, selected, onClick, hideProjectPath }) {
+      const props = { item, selected, onClick, hideProjectPath };
+      if (item.type === 'plugin') return <PluginCard plugin={item} selected={selected} onClick={onClick} hideProjectPath={hideProjectPath} />;
+      if (item.type === 'agent')  return <AgentCard  agent={item}  selected={selected} onClick={onClick} hideProjectPath={hideProjectPath} />;
+      if (item.type === 'skill')  return <SkillCard  {...props} />;
+      if (item.type === 'mcp')    return <McpCard    {...props} />;
+      if (item.type === 'hook')   return <HookCard   {...props} />;
+      return null;
+    }
+
     // ── Sidebar ────────────────────────────────────────────
-    function Sidebar({ plugin, agent, onClose }) {
-      if (!plugin && !agent) {
+    function Sidebar({ item, onClose }) {
+      const plugin = item?.type === 'plugin' ? item : null;
+      const agent  = item?.type === 'agent'  ? item : null;
+      const skill  = item?.type === 'skill'  ? item : null;
+      const mcp    = item?.type === 'mcp'    ? item : null;
+      const hook   = item?.type === 'hook'   ? item : null;
+
+      if (!item) {
         return (
           <div className="sidebar">
             <div className="no-sidebar-hint">
@@ -500,6 +597,134 @@
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      if (skill) {
+        return (
+          <div className="sidebar">
+            <div className="sidebar-header">
+              <div>
+                <div className="sidebar-title">⌨️ {skill.name}</div>
+                <div className="sidebar-subtitle">{skill.filePath}</div>
+              </div>
+              <button className="close-btn" onClick={onClose}>✕</button>
+            </div>
+            <div className="sidebar-body">
+              <div className="section">
+                <div className="section-title">기본 정보</div>
+                <div className="info-row">
+                  <span className="info-label">Scope</span>
+                  <span className="info-value"><span className={scopeBadgeClass(skill.scope)}>{scopeLabel(skill.scope)}</span></span>
+                </div>
+                {skill.projectPath && (
+                  <div className="info-row">
+                    <span className="info-label">프로젝트 경로</span>
+                    <span className="info-value" title={skill.projectPath}>{skill.projectPath}</span>
+                  </div>
+                )}
+              </div>
+              {skill.description && (
+                <div className="section">
+                  <div className="section-title">설명</div>
+                  <div style={{fontSize:'13px', color:'var(--text)', lineHeight:'1.6'}}>{skill.description}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      if (mcp) {
+        const cmd = mcp.command ? `${mcp.command}${mcp.args?.length ? ' ' + mcp.args.join(' ') : ''}` : null;
+        return (
+          <div className="sidebar">
+            <div className="sidebar-header">
+              <div>
+                <div className="sidebar-title">🔌 {mcp.name}</div>
+                <div className="sidebar-subtitle">{mcp.serverType || 'MCP Server'}</div>
+              </div>
+              <button className="close-btn" onClick={onClose}>✕</button>
+            </div>
+            <div className="sidebar-body">
+              <div className="section">
+                <div className="section-title">기본 정보</div>
+                <div className="info-row">
+                  <span className="info-label">Scope</span>
+                  <span className="info-value"><span className={scopeBadgeClass(mcp.scope)}>{scopeLabel(mcp.scope)}</span></span>
+                </div>
+                {mcp.serverType && (
+                  <div className="info-row"><span className="info-label">타입</span><span className="info-value">{mcp.serverType}</span></div>
+                )}
+                {mcp.projectPath && (
+                  <div className="info-row">
+                    <span className="info-label">프로젝트 경로</span>
+                    <span className="info-value" title={mcp.projectPath}>{mcp.projectPath}</span>
+                  </div>
+                )}
+              </div>
+              {cmd && (
+                <div className="section">
+                  <div className="section-title">Command</div>
+                  <div className="mcp-command" style={{whiteSpace:'pre-wrap', wordBreak:'break-all'}}>{cmd}</div>
+                </div>
+              )}
+              {mcp.url && (
+                <div className="section">
+                  <div className="section-title">URL</div>
+                  <div className="mcp-command">{mcp.url}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      if (hook) {
+        return (
+          <div className="sidebar">
+            <div className="sidebar-header">
+              <div>
+                <div className="sidebar-title">🪝 {hook.event}</div>
+                <div className="sidebar-subtitle">matcher: {hook.matcher}</div>
+              </div>
+              <button className="close-btn" onClick={onClose}>✕</button>
+            </div>
+            <div className="sidebar-body">
+              <div className="section">
+                <div className="section-title">기본 정보</div>
+                <div className="info-row">
+                  <span className="info-label">Scope</span>
+                  <span className="info-value"><span className={scopeBadgeClass(hook.scope)}>{scopeLabel(hook.scope)}</span></span>
+                </div>
+                <div className="info-row">
+                  <span className="info-label">Event</span>
+                  <span className="info-value">{hook.event}</span>
+                </div>
+                <div className="info-row">
+                  <span className="info-label">Matcher</span>
+                  <span className="info-value">{hook.matcher}</span>
+                </div>
+                {hook.projectPath && (
+                  <div className="info-row">
+                    <span className="info-label">프로젝트 경로</span>
+                    <span className="info-value" title={hook.projectPath}>{hook.projectPath}</span>
+                  </div>
+                )}
+              </div>
+              <div className="section">
+                <div className="section-title">
+                  Commands
+                  <span className="section-count">{hook.commands.length}</span>
+                </div>
+                {hook.commands.map((cmd, i) => (
+                  <div key={i} className="skill-item">
+                    <div style={{whiteSpace:'pre-wrap', wordBreak:'break-all', fontFamily:'Consolas,monospace', fontSize:'11px', color:'var(--text-muted)'}}>{cmd}</div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -603,20 +828,24 @@
       const [data, setData] = useState(null);
       const [loading, setLoading] = useState(true);
       const [activeTab, setActiveTab] = useState('all');
-      const [selectedPlugin, setSelectedPlugin] = useState(null);
-      const [selectedAgent, setSelectedAgent] = useState(null);
+      const [selectedItem, setSelectedItem] = useState(null);
       const [spinning, setSpinning] = useState(false);
+      const [filters, setFilters] = useState({ plugins: true, mcp: true, agents: true, skills: true, hooks: true });
 
       const loadData = useCallback(async () => {
         setSpinning(true);
         try {
           const result = await window.electronAPI.getEcosystemData();
           setData(result);
-          setSelectedPlugin(prev =>
-            prev ? result.plugins.find(p => p.instanceKey === prev.instanceKey) || null : null
-          );
+          setSelectedItem(prev => {
+            if (!prev) return null;
+            if (prev.type === 'plugin') return result.plugins.find(p => p.instanceKey === prev.instanceKey) || null;
+            if (prev.type === 'agent')  return result.agents.find(a => a.filePath === prev.filePath) || null;
+            if (prev.type === 'skill')  return result.skills.find(s => s.filePath === prev.filePath) || null;
+            return null;
+          });
         } catch (e) {
-          setData({ plugins: [], errors: [{ file: 'IPC', message: e.message }], claudeDir: '' });
+          setData({ plugins: [], agents: [], skills: [], mcpServers: [], hooks: [], errors: [{ file: 'IPC', message: e.message }], claudeDir: '' });
         } finally {
           setLoading(false);
           setTimeout(() => setSpinning(false), 400);
@@ -630,19 +859,28 @@
         { key: 'user',    label: 'User' },
         { key: 'project', label: 'Project' },
         { key: 'local',   label: 'Local' },
-        { key: 'agents',  label: 'Agents' },
       ];
 
-      const isAgentsTab = activeTab === 'agents';
+      const filterDefs = [
+        { key: 'plugins', label: 'Plugins', color: 'var(--blue)' },
+        { key: 'mcp',     label: 'MCP',     color: 'var(--green)' },
+        { key: 'agents',  label: 'Agents',  color: 'var(--purple)' },
+        { key: 'skills',  label: 'Skills',  color: 'var(--orange)' },
+        { key: 'hooks',   label: 'Hooks',   color: 'var(--yellow)' },
+      ];
 
-      const filtered = isAgentsTab
-        ? (data?.agents || [])
-        : (data?.plugins || []).filter(p => activeTab === 'all' || p.scope === activeTab);
+      const allItems = [
+        ...(filters.plugins ? (data?.plugins    || []) : []),
+        ...(filters.agents  ? (data?.agents     || []) : []),
+        ...(filters.skills  ? (data?.skills     || []) : []),
+        ...(filters.mcp     ? (data?.mcpServers || []) : []),
+        ...(filters.hooks   ? (data?.hooks      || []) : []),
+      ];
 
-      const countByScope = (scope) => {
-        if (scope === 'agents') return (data?.agents || []).length;
-        return (data?.plugins || []).filter(p => scope === 'all' || p.scope === scope).length;
-      };
+      const filtered = allItems.filter(item => activeTab === 'all' || item.scope === activeTab);
+
+      const countByScope = (scope) =>
+        allItems.filter(item => scope === 'all' || item.scope === scope).length;
 
       return (
         <>
@@ -678,11 +916,23 @@
               <div
                 key={tab.key}
                 className={`tab${activeTab === tab.key ? ' active' : ''}`}
-                onClick={() => { setActiveTab(tab.key); setSelectedPlugin(null); setSelectedAgent(null); }}
+                onClick={() => { setActiveTab(tab.key); setSelectedItem(null); }}
               >
                 {tab.label}
                 <span className="tab-count">{countByScope(tab.key)}</span>
               </div>
+            ))}
+          </div>
+
+          {/* 필터 바 */}
+          <div className="filter-bar">
+            {filterDefs.map(f => (
+              <label key={f.key} className={`filter-chip${filters[f.key] ? ' active' : ''}`}>
+                <input type="checkbox" checked={filters[f.key]}
+                  onChange={() => setFilters(prev => ({ ...prev, [f.key]: !prev[f.key] }))} />
+                <span className="filter-dot" style={{background: filters[f.key] ? f.color : 'var(--border)'}} />
+                {f.label}
+              </label>
             ))}
           </div>
 
@@ -697,10 +947,10 @@
               ) : filtered.length === 0 ? (
                 <div className="empty-state">
                   <div className="empty-icon">📭</div>
-                  <div className="empty-text">{isAgentsTab ? '등록된 에이전트가 없습니다' : '이 스코프에 설치된 플러그인이 없습니다'}</div>
+                  <div className="empty-text">표시할 항목이 없습니다</div>
                 </div>
-              ) : isAgentsTab ? (
-                Array.from(groupAgentsByProject(filtered).entries()).map(([projectPath, agents]) => (
+              ) : (activeTab === 'project' || activeTab === 'local') ? (
+                Array.from(groupByProject(filtered).entries()).map(([projectPath, items]) => (
                   <div key={projectPath || 'user'} className="project-group">
                     <div className="project-group-header">
                       <span>{projectPath ? '📁' : '👤'}</span>
@@ -708,35 +958,12 @@
                       {projectPath && <span className="project-group-path">{projectPath}</span>}
                     </div>
                     <div className="plugin-grid">
-                      {agents.map((agent, i) => (
-                        <AgentCard
-                          key={`${agent.filePath}::${i}`}
-                          agent={agent}
-                          selected={selectedAgent?.filePath === agent.filePath}
-                          onClick={a => setSelectedAgent(selectedAgent?.filePath === a.filePath ? null : a)}
-                          hideProjectPath
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))
-              ) : (activeTab === 'local' || activeTab === 'project') ? (
-                Array.from(groupByProject(filtered).entries()).map(([projectPath, plugins]) => (
-                  <div key={projectPath || 'unknown'} className="project-group">
-                    <div className="project-group-header">
-                      <span>📁</span>
-                      <span className="project-group-name">{getProjectName(projectPath)}</span>
-                      <span className="project-group-path">{projectPath}</span>
-                    </div>
-                    <div className="plugin-grid">
-                      {plugins.map(plugin => (
-                        <PluginCard
-                          key={plugin.instanceKey}
-                          plugin={plugin}
-                          selected={selectedPlugin?.instanceKey === plugin.instanceKey}
-                          onClick={p => setSelectedPlugin(
-                            selectedPlugin?.instanceKey === p.instanceKey ? null : p
-                          )}
+                      {items.map((item, i) => (
+                        <ItemCard
+                          key={item.instanceKey || item.filePath || `${item.type}::${item.name}::${i}`}
+                          item={item}
+                          selected={selectedItem === item || (selectedItem?.instanceKey && selectedItem.instanceKey === item.instanceKey) || (selectedItem?.filePath && selectedItem.filePath === item.filePath)}
+                          onClick={it => setSelectedItem(selectedItem === it ? null : it)}
                           hideProjectPath
                         />
                       ))}
@@ -745,14 +972,12 @@
                 ))
               ) : (
                 <div className="plugin-grid">
-                  {filtered.map(plugin => (
-                    <PluginCard
-                      key={plugin.instanceKey}
-                      plugin={plugin}
-                      selected={selectedPlugin?.instanceKey === plugin.instanceKey}
-                      onClick={p => setSelectedPlugin(
-                        selectedPlugin?.instanceKey === p.instanceKey ? null : p
-                      )}
+                  {filtered.map((item, i) => (
+                    <ItemCard
+                      key={item.instanceKey || item.filePath || `${item.type}::${item.name}::${i}`}
+                      item={item}
+                      selected={selectedItem === item || (selectedItem?.instanceKey && selectedItem.instanceKey === item.instanceKey) || (selectedItem?.filePath && selectedItem.filePath === item.filePath)}
+                      onClick={it => setSelectedItem(selectedItem === it ? null : it)}
                     />
                   ))}
                 </div>
@@ -761,9 +986,8 @@
 
             {/* 사이드바 */}
             <Sidebar
-              plugin={isAgentsTab ? null : selectedPlugin}
-              agent={isAgentsTab ? selectedAgent : null}
-              onClose={() => isAgentsTab ? setSelectedAgent(null) : setSelectedPlugin(null)}
+              item={selectedItem}
+              onClose={() => setSelectedItem(null)}
             />
           </div>
         </>

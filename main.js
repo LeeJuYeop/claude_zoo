@@ -95,6 +95,80 @@ function parseAgentFile(filePath) {
   }
 }
 
+// standalone skills/commands 스캔 (.claude/commands/ + .claude/skills/)
+function scanSkills(claudeSubDir, scope, projectPath) {
+  const items = []
+  const dirs = [
+    path.join(claudeSubDir, 'commands'),
+    path.join(claudeSubDir, 'skills'),
+  ]
+  for (const dir of dirs) {
+    try {
+      if (!fs.existsSync(dir)) continue
+      const scanDir = (d) => {
+        for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+          const full = path.join(d, entry.name)
+          if (entry.isDirectory()) { scanDir(full); continue }
+          if (!entry.name.endsWith('.md')) continue
+
+          let name = entry.name.replace('.md', '')
+          let description = ''
+          try {
+            const content = fs.readFileSync(full, 'utf-8')
+            const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+            if (fmMatch) {
+              const fm = fmMatch[1]
+              name = (fm.match(/^name:\s*['"]?(.+?)['"]?\s*$/m) || [])[1]?.trim() || name
+              description = (fm.match(/^description:\s*['"]?(.+?)['"]?\s*$/m) || [])[1]?.trim() || ''
+            }
+            if (!description) {
+              const titleLine = content.split('\n').find(l => l.startsWith('# '))
+              if (titleLine) description = titleLine.replace('# ', '').trim()
+            }
+          } catch (_) {}
+
+          items.push({ type: 'skill', name, description, scope, projectPath: projectPath || null, filePath: full })
+        }
+      }
+      scanDir(dir)
+    } catch (_) {}
+  }
+  return items
+}
+
+// settings 파일에서 standalone MCP 서버 추출
+function extractMcpServers(settingsData, scope, projectPath) {
+  if (!settingsData?.mcpServers) return []
+  return Object.entries(settingsData.mcpServers).map(([name, cfg]) => ({
+    type: 'mcp',
+    name,
+    serverType: cfg.type || null,
+    command: cfg.command || null,
+    args: cfg.args || null,
+    url: cfg.url || null,
+    scope,
+    projectPath: projectPath || null,
+  }))
+}
+
+// settings 파일에서 hooks 추출 (이벤트×매처 = 카드 1개)
+function extractHooks(settingsData, scope, projectPath) {
+  if (!settingsData?.hooks) return []
+  const items = []
+  for (const [event, rules] of Object.entries(settingsData.hooks)) {
+    if (!Array.isArray(rules)) continue
+    for (const rule of rules) {
+      const matcher = rule.matcher || '*'
+      const commands = (rule.hooks || [])
+        .filter(h => h.type === 'command' && h.command)
+        .map(h => h.command)
+      if (commands.length === 0) continue
+      items.push({ type: 'hook', event, matcher, commands, scope, projectPath: projectPath || null })
+    }
+  }
+  return items
+}
+
 // 에이전트 디렉토리 스캔
 function scanAgents(agentsDir, scope, projectPath) {
   const agents = []
@@ -104,7 +178,7 @@ function scanAgents(agentsDir, scope, projectPath) {
       if (!entry.isFile() || !entry.name.endsWith('.md')) continue
       const filePath = path.join(agentsDir, entry.name)
       const meta = parseAgentFile(filePath)
-      agents.push({ ...meta, scope, projectPath: projectPath || null, filePath })
+      agents.push({ type: 'agent', ...meta, scope, projectPath: projectPath || null, filePath })
     }
   } catch (_) {}
   return agents
@@ -178,6 +252,7 @@ ipcMain.handle('get-ecosystem-data', async () => {
       const isEnabled = scopeEnabledPlugins ? scopeEnabledPlugins[pluginId] !== false : true
 
       plugins.push({
+        type: 'plugin',
         id: pluginId,
         instanceKey: `${pluginId}::${scope}::${projectPath || installPath}`,
         name: name || pluginId,
@@ -198,21 +273,49 @@ ipcMain.handle('get-ecosystem-data', async () => {
     }
   }
 
-  // Sub-agents 수집
-  const agents = []
-  agents.push(...scanAgents(path.join(claudeDir, 'agents'), 'user', null))
-
+  // 알려진 프로젝트 경로 수집
   const knownProjectPaths = new Set()
   for (const instances of Object.values(installedMap)) {
     for (const inst of instances) {
       if (inst.projectPath) knownProjectPaths.add(inst.projectPath)
     }
   }
+
+  // Sub-agents 수집
+  const agents = []
+  agents.push(...scanAgents(path.join(claudeDir, 'agents'), 'user', null))
   for (const pp of knownProjectPaths) {
     agents.push(...scanAgents(path.join(pp, '.claude', 'agents'), 'project', pp))
   }
 
-  return { plugins, agents, errors, claudeDir }
+  // Standalone Skills 수집
+  const skills = []
+  skills.push(...scanSkills(claudeDir, 'user', null))
+  for (const pp of knownProjectPaths) {
+    skills.push(...scanSkills(path.join(pp, '.claude'), 'project', pp))
+  }
+
+  // Standalone MCP 서버 수집
+  const mcpServers = []
+  mcpServers.push(...extractMcpServers(settingsResult.data, 'user', null))
+  for (const pp of knownProjectPaths) {
+    const projSettings = readJsonSafe(path.join(pp, '.claude', 'settings.json')).data
+    const localSettings = readJsonSafe(path.join(pp, '.claude', 'settings.local.json')).data
+    mcpServers.push(...extractMcpServers(projSettings, 'project', pp))
+    mcpServers.push(...extractMcpServers(localSettings, 'local', pp))
+  }
+
+  // Hooks 수집
+  const hooks = []
+  hooks.push(...extractHooks(settingsResult.data, 'user', null))
+  for (const pp of knownProjectPaths) {
+    const projSettings = readJsonSafe(path.join(pp, '.claude', 'settings.json')).data
+    const localSettings = readJsonSafe(path.join(pp, '.claude', 'settings.local.json')).data
+    hooks.push(...extractHooks(projSettings, 'project', pp))
+    hooks.push(...extractHooks(localSettings, 'local', pp))
+  }
+
+  return { plugins, agents, skills, mcpServers, hooks, errors, claudeDir }
 })
 
 app.whenReady().then(createWindow)
