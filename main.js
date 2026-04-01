@@ -3,6 +3,32 @@ const path = require('path')
 const fs = require('fs')
 const os = require('os')
 
+// ~/.claude/projects/<폴더>/*.jsonl 파일에서 cwd 필드 추출
+// JSONL 파일을 전부 읽지 않고 앞 4KB만 읽어 첫 번째 cwd를 반환
+function getCwdFromProjectFolder(projectFolderPath) {
+  try {
+    const files = fs.readdirSync(projectFolderPath).filter(f => f.endsWith('.jsonl'))
+    for (const file of files) {
+      const filePath = path.join(projectFolderPath, file)
+      try {
+        const fd = fs.openSync(filePath, 'r')
+        const buf = Buffer.alloc(4096)
+        const bytesRead = fs.readSync(fd, buf, 0, 4096, 0)
+        fs.closeSync(fd)
+        const chunk = buf.slice(0, bytesRead).toString('utf8')
+        for (const line of chunk.split('\n')) {
+          if (!line.trim()) continue
+          try {
+            const obj = JSON.parse(line)
+            if (obj.cwd) return obj.cwd
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return null
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -280,11 +306,25 @@ ipcMain.handle('get-ecosystem-data', async () => {
 
   // 알려진 프로젝트 경로 수집
   const knownProjectPaths = new Set()
+  // 1) installed_plugins.json의 projectPath
   for (const instances of Object.values(installedMap)) {
     for (const inst of instances) {
       if (inst.projectPath) knownProjectPaths.add(inst.projectPath)
     }
   }
+  // 2) ~/.claude/projects/ JSONL에서 cwd 읽어 프로젝트 경로 탐지
+  const projectsDir = path.join(claudeDir, 'projects')
+  try {
+    if (fs.existsSync(projectsDir)) {
+      for (const entry of fs.readdirSync(projectsDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        const cwd = getCwdFromProjectFolder(path.join(projectsDir, entry.name))
+        if (cwd && fs.existsSync(path.join(cwd, '.claude'))) {
+          knownProjectPaths.add(cwd)
+        }
+      }
+    }
+  } catch (_) {}
 
   // Sub-agents 수집
   const agents = []
