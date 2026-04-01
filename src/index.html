@@ -870,7 +870,7 @@
       ];
 
       const allItems = [
-        ...(filters.plugins ? (data?.plugins    || []) : []),
+        ...(data?.plugins || []).filter(p => filters.plugins || (filters.mcp && p.mcpCount > 0)),
         ...(filters.agents  ? (data?.agents     || []) : []),
         ...(filters.skills  ? (data?.skills     || []) : []),
         ...(filters.mcp     ? (data?.mcpServers || []) : []),
