@@ -122,48 +122,86 @@ function parseAgentFile(filePath) {
   }
 }
 
+// .md 파일 파싱 헬퍼
+function parseMdSkill(filePath, scope, projectPath) {
+  let name = path.basename(filePath, '.md')
+  let description = ''
+  let body = ''
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8')
+    const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/)
+    if (fmMatch) {
+      const fm = fmMatch[1]
+      name = (fm.match(/^name:\s*['"]?(.+?)['"]?\s*$/m) || [])[1]?.trim() || name
+      description = (fm.match(/^description:\s*['"]?(.+?)['"]?\s*$/m) || [])[1]?.trim() || ''
+      body = content.slice(fmMatch[0].length).trim()
+    } else {
+      body = content.trim()
+    }
+    if (!description) {
+      const titleLine = body.split('\n').find(l => l.startsWith('# '))
+      if (titleLine) description = titleLine.replace('# ', '').trim()
+    }
+  } catch (_) {}
+  return { type: 'skill', name, description, body, scope, projectPath: projectPath || null, filePath, subSkills: [] }
+}
+
 // standalone skills/commands 스캔 (.claude/commands/ + .claude/skills/)
 function scanSkills(claudeSubDir, scope, projectPath) {
   const items = []
-  const dirs = [
-    path.join(claudeSubDir, 'commands'),
-    path.join(claudeSubDir, 'skills'),
-  ]
-  for (const dir of dirs) {
-    try {
-      if (!fs.existsSync(dir)) continue
+
+  // commands: 기존 재귀 flat 스캔 유지
+  const commandsDir = path.join(claudeSubDir, 'commands')
+  try {
+    if (fs.existsSync(commandsDir)) {
       const scanDir = (d) => {
         for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
           const full = path.join(d, entry.name)
           if (entry.isDirectory()) { scanDir(full); continue }
-          if (!entry.name.endsWith('.md')) continue
-
-          let name = entry.name.replace('.md', '')
-          let description = ''
-          let body = ''
-          try {
-            const content = fs.readFileSync(full, 'utf-8')
-            const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/)
-            if (fmMatch) {
-              const fm = fmMatch[1]
-              name = (fm.match(/^name:\s*['"]?(.+?)['"]?\s*$/m) || [])[1]?.trim() || name
-              description = (fm.match(/^description:\s*['"]?(.+?)['"]?\s*$/m) || [])[1]?.trim() || ''
-              body = content.slice(fmMatch[0].length).trim()
-            } else {
-              body = content.trim()
-            }
-            if (!description) {
-              const titleLine = body.split('\n').find(l => l.startsWith('# '))
-              if (titleLine) description = titleLine.replace('# ', '').trim()
-            }
-          } catch (_) {}
-
-          items.push({ type: 'skill', name, description, body, scope, projectPath: projectPath || null, filePath: full })
+          if (!entry.name.endsWith('.md') || entry.name === 'README.md') continue
+          items.push(parseMdSkill(full, scope, projectPath))
         }
       }
-      scanDir(dir)
-    } catch (_) {}
-  }
+      scanDir(commandsDir)
+    }
+  } catch (_) {}
+
+  // skills: 2단계 스캔 — 디렉터리 기반 스킬은 계층 구조 적용
+  const skillsDir = path.join(claudeSubDir, 'skills')
+  try {
+    if (fs.existsSync(skillsDir)) {
+      for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
+        const full = path.join(skillsDir, entry.name)
+        if (!entry.isDirectory()) {
+          // 단일 파일 스킬 (하위 호환)
+          if (!entry.name.endsWith('.md') || entry.name === 'README.md') continue
+          items.push(parseMdSkill(full, scope, projectPath))
+          continue
+        }
+        // 디렉터리 기반 스킬: SKILL.md가 없으면 건너뜀
+        const skillMdPath = path.join(full, 'SKILL.md')
+        if (!fs.existsSync(skillMdPath)) continue
+        const skill = parseMdSkill(skillMdPath, scope, projectPath)
+        // 하위 디렉터리의 .md 파일을 subSkills로 수집
+        const collectSubSkills = (d) => {
+          for (const f of fs.readdirSync(d, { withFileTypes: true })) {
+            const fp = path.join(d, f.name)
+            if (f.isDirectory()) { collectSubSkills(fp); continue }
+            if (!f.name.endsWith('.md') || f.name === 'README.md') continue
+            const sub = parseMdSkill(fp, scope, projectPath)
+            skill.subSkills.push(sub)
+          }
+        }
+        try {
+          for (const sub of fs.readdirSync(full, { withFileTypes: true })) {
+            if (sub.isDirectory()) collectSubSkills(path.join(full, sub.name))
+          }
+        } catch (_) {}
+        items.push(skill)
+      }
+    }
+  } catch (_) {}
+
   return items
 }
 
