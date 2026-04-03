@@ -27,3 +27,7 @@ Thumbs.db
 project_desc.md
 .claude/claude-edit-log.txt
 .claude/logs/
+
+# 클로드관련 - 팀플아니니까
+.claude/
+CLAUDE.md
