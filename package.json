@@ -9,6 +9,9 @@
   "devDependencies": {
     "electron": "^33.0.0"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "pnpm": {
     "onlyBuiltDependencies": ["electron"]
   }
